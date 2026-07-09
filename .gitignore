@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# C build output
+agent/monitor
+monitor
+
+# ML model output
+ml/model.pkl
+
+# OS files
+.DS_Store
+
+# Environment variables
+.env
