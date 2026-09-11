@@ -1,0 +1,28 @@
+filesentinel-ai/
+│
+├── agent/
+│   ├── monitor.c              # C program that monitors file activity
+│   ├── Makefile               # Builds and runs the C monitoring agent
+│   └── README.md              # Notes for setting up the agent
+│
+├── backend/
+│   ├── main.py                # FastAPI backend entry point
+│   ├── database.py            # Database connection and setup
+│   ├── models.py              # Database models / schemas
+│   ├── ml_detector.py         # Loads ML model and detects suspicious activity
+│   └── requirements.txt       # Python dependencies
+│
+├── frontend/
+│   └── React dashboard files  # Web dashboard for viewing alerts and logs
+│
+├── data/
+│   ├── events.csv             # Logged file activity events
+│   └── filesentinel.db        # SQLite database
+│
+├── ml/
+│   ├── train_model.py         # Script to train the AI/ML detection model
+│   ├── model.pkl              # Saved trained model
+│   └── sample_events.csv      # Sample training/testing data
+│
+├── docker-compose.yml         # Runs the full system using Docker
+└── README.md                  # Main project documentation
