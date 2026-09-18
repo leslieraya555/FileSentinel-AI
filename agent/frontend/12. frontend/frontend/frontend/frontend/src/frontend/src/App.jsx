@@ -1,145 +1,215 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+/**
+ * Operational dashboard for FileSentinel AI.
+ *
+ * Presents service health, explainable alerts, anomaly evidence, aggregate
+ * statistics, and recent file-system telemetry.
+ *
+ * Author: Leslie Raya
+ * GitHub: https://github.com/leslieraya555
+ */
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const REFRESH_INTERVAL_MS = 5000;
+
+const EMPTY_STATS = {
+  total_events: 0,
+  create_events: 0,
+  modify_events: 0,
+  delete_events: 0,
+  rename_events: 0,
+  access_events: 0,
+};
+
+function riskTone(score) {
+  if (score >= 80) return "critical";
+  if (score >= 50) return "warning";
+  return "safe";
+}
+
+function formatTimestamp(value) {
+  if (!value) return "Not available";
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toLocaleString();
+}
+
+function StatCard({ label, value, tone = "neutral" }) {
+  return (
+    <article className={`stat-card ${tone}`}>
+      <span>{label}</span>
+      <strong>{value.toLocaleString()}</strong>
+    </article>
+  );
+}
 
 function App() {
-  const [events, setEvents] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [ruleAlerts, setRuleAlerts] = useState([]);
-  const [mlAlert, setMlAlert] = useState(null);
-  const [backendStatus, setBackendStatus] = useState("Checking...");
+  const [overview, setOverview] = useState(null);
+  const [backendStatus, setBackendStatus] = useState("checking");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  // One overview request keeps statistics and alerts aligned to the same snapshot.
+  const fetchOverview = useCallback(async () => {
     try {
-      const healthResponse = await axios.get(`${API_BASE_URL}/health`);
-      setBackendStatus(healthResponse.data.status);
-
-      const eventsResponse = await axios.get(`${API_BASE_URL}/events`);
-      const statsResponse = await axios.get(`${API_BASE_URL}/stats`);
-      const ruleResponse = await axios.get(`${API_BASE_URL}/alerts/rules`);
-      const mlResponse = await axios.get(`${API_BASE_URL}/alerts/ml`);
-
-      setEvents(eventsResponse.data);
-      setStats(statsResponse.data);
-      setRuleAlerts(ruleResponse.data);
-      setMlAlert(mlResponse.data);
-    } catch (error) {
+      const response = await fetch(`${API_BASE_URL}/overview?limit=100`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+      setOverview(await response.json());
+      setBackendStatus("healthy");
+      setError("");
+    } catch (requestError) {
       setBackendStatus("offline");
-      console.error("Error fetching data:", error);
+      setError(`Dashboard refresh failed: ${requestError.message}`);
+    } finally {
+      setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchData();
-
-    const interval = setInterval(fetchData, 3000);
-
-    return () => clearInterval(interval);
   }, []);
 
-  const getRiskClass = (score) => {
-    if (score >= 80) return "risk-high";
-    if (score >= 50) return "risk-medium";
-    return "risk-low";
+  useEffect(() => {
+    fetchOverview();
+    const interval = window.setInterval(fetchOverview, REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [fetchOverview]);
+
+  const stats = overview?.stats ?? EMPTY_STATS;
+  const events = overview?.events ?? [];
+  const alerts = overview?.rule_alerts ?? [];
+  const mlAlert = overview?.ml_alert ?? {
+    status: "WAITING",
+    risk_score: 0,
+    message: "Waiting for an assessment.",
+    features: null,
   };
+  const riskClass = riskTone(mlAlert.risk_score);
+
+  const sortedEvents = useMemo(
+    () => [...events].sort((left, right) => right.timestamp.localeCompare(left.timestamp)),
+    [events],
+  );
 
   return (
-    <main className="page">
-      <header className="header">
+    <main className="page-shell">
+      <header className="hero">
         <div>
-          <h1>FileSentinel AI</h1>
-          <p>AI-Powered Linux File-System Security Monitor</p>
+          <p className="eyebrow">Linux endpoint defense</p>
+          <h1>FileSentinel <span>AI</span></h1>
+          <p className="subtitle">
+            Explainable file-system monitoring with behavioral rules and anomaly detection.
+          </p>
         </div>
-
-        <div className={`status ${backendStatus === "healthy" ? "online" : "offline"}`}>
-          Backend: {backendStatus}
+        <div className="hero-actions">
+          <div className={`service-status ${backendStatus}`}>
+            <span className="status-dot" aria-hidden="true" />
+            API {backendStatus}
+          </div>
+          <button type="button" onClick={fetchOverview} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh now"}
+          </button>
         </div>
       </header>
 
-      <section className="grid">
-        <div className="card">
-          <h2>ML Risk Status</h2>
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
-          {mlAlert ? (
-            <>
-              <p className="label">Status</p>
-              <h3>{mlAlert.status}</h3>
+      <section className="stats-grid" aria-label="Event totals">
+        <StatCard label="Total events" value={stats.total_events} />
+        <StatCard label="Created" value={stats.create_events} tone="info" />
+        <StatCard label="Modified" value={stats.modify_events} tone="warning" />
+        <StatCard label="Deleted" value={stats.delete_events} tone="critical" />
+        <StatCard label="Renamed" value={stats.rename_events} tone="purple" />
+        <StatCard label="Accessed" value={stats.access_events} tone="safe" />
+      </section>
 
-              <p className="label">Risk Score</p>
-              <div className={`risk-score ${getRiskClass(mlAlert.risk_score)}`}>
-                {mlAlert.risk_score}/100
-              </div>
-
-              <p>{mlAlert.message}</p>
-            </>
-          ) : (
-            <p>No ML status available.</p>
+      <section className="analysis-grid">
+        <article className="panel risk-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Machine-learning assessment</p>
+              <h2>{mlAlert.status.replaceAll("_", " ")}</h2>
+            </div>
+            <div className={`risk-ring ${riskClass}`} aria-label={`Risk score ${mlAlert.risk_score} out of 100`}>
+              <strong>{mlAlert.risk_score}</strong>
+              <span>/ 100</span>
+            </div>
+          </div>
+          <p>{mlAlert.message}</p>
+          {mlAlert.features && (
+            <dl className="feature-grid">
+              {Object.entries(mlAlert.features).map(([name, value]) => (
+                <div key={name}>
+                  <dt>{name.replaceAll("_", " ")}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
           )}
-        </div>
+        </article>
 
-        <div className="card">
-          <h2>Event Stats</h2>
-
-          {stats ? (
-            <div className="stats">
-              <p>Total Events: <strong>{stats.total_events}</strong></p>
-              <p>Create: <strong>{stats.create_events}</strong></p>
-              <p>Modify: <strong>{stats.modify_events}</strong></p>
-              <p>Delete: <strong>{stats.delete_events}</strong></p>
-              <p>Rename: <strong>{stats.rename_events}</strong></p>
-              <p>Access: <strong>{stats.access_events}</strong></p>
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Explainable detections</p>
+              <h2>Rule alerts</h2>
+            </div>
+            <span className={`alert-count ${alerts.length ? "active" : ""}`}>{alerts.length}</span>
+          </div>
+          {alerts.length === 0 ? (
+            <div className="empty-state">
+              <strong>No thresholds exceeded</strong>
+              <span>Recent activity does not match a configured bulk-operation rule.</span>
             </div>
           ) : (
-            <p>No stats available.</p>
-          )}
-        </div>
-      </section>
-
-      <section className="card">
-        <h2>Rule-Based Alerts</h2>
-
-        {ruleAlerts.length === 0 ? (
-          <p className="safe">No rule-based alerts detected.</p>
-        ) : (
-          <div className="alerts">
-            {ruleAlerts.map((alert, index) => (
-              <div className="alert" key={index}>
-                <div>
-                  <strong>{alert.severity}</strong> — {alert.type}
+            <div className="alert-list">
+              {alerts.map((alert) => (
+                <div className={`alert-item ${alert.severity.toLowerCase()}`} key={alert.type}>
+                  <div>
+                    <span>{alert.severity}</span>
+                    <strong>{alert.type.replaceAll("_", " ")}</strong>
+                  </div>
+                  <p>{alert.message}</p>
+                  <small>Recommended: {alert.recommended_action}</small>
                 </div>
-                <p>{alert.message}</p>
-                <p>Risk Score: {alert.risk_score}/100</p>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </article>
       </section>
 
-      <section className="card">
-        <h2>Recent File Events</h2>
+      <section className="panel telemetry-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Latest validated records</p>
+            <h2>Event telemetry</h2>
+          </div>
+          <span className="updated-at">Updated {formatTimestamp(overview?.generated_at)}</span>
+        </div>
 
-        {events.length === 0 ? (
-          <p>No file events yet. Start the C monitor and modify files in your watch folder.</p>
+        {sortedEvents.length === 0 ? (
+          <div className="empty-state">
+            <strong>No telemetry available</strong>
+            <span>Start the Linux agent or run the safe simulation script.</span>
+          </div>
         ) : (
           <div className="table-wrapper">
             <table>
               <thead>
                 <tr>
                   <th>Timestamp</th>
-                  <th>Event Type</th>
-                  <th>File Name</th>
-                  <th>File Path</th>
+                  <th>Event</th>
+                  <th>File</th>
+                  <th>Path</th>
                 </tr>
               </thead>
-
               <tbody>
-                {events.slice().reverse().map((event, index) => (
-                  <tr key={index}>
-                    <td>{event.timestamp}</td>
-                    <td>{event.event_type}</td>
+                {sortedEvents.map((event, index) => (
+                  <tr key={`${event.timestamp}-${event.event_type}-${event.file_path}-${index}`}>
+                    <td>{formatTimestamp(event.timestamp)}</td>
+                    <td><span className={`event-badge ${event.event_type.toLowerCase()}`}>{event.event_type}</span></td>
                     <td>{event.file_name}</td>
-                    <td>{event.file_path}</td>
+                    <td className="path-cell" title={event.file_path}>{event.file_path}</td>
                   </tr>
                 ))}
               </tbody>
@@ -147,6 +217,11 @@ function App() {
           </div>
         )}
       </section>
+
+      <footer>
+        <span>FileSentinel AI v2.0</span>
+        <span>Designed and engineered by Leslie Raya</span>
+      </footer>
     </main>
   );
 }

@@ -1,0 +1,26 @@
+{
+  "author": "Leslie Raya",
+  "trained_at": "2026-09-14T19:49:54.684812+00:00",
+  "algorithm": "IsolationForest",
+  "random_seed": 42,
+  "training_rows": 1500,
+  "validation_rows": 600,
+  "features": [
+    "modify_count",
+    "delete_count",
+    "rename_count",
+    "create_count",
+    "access_count",
+    "events_per_second"
+  ],
+  "metrics": {
+    "precision": 0.9772,
+    "recall": 1.0,
+    "f1_score": 0.9885,
+    "false_positive_rate": 0.0233
+  },
+  "limitations": [
+    "Synthetic training distributions require calibration with production telemetry.",
+    "An anomaly identifies unusual behavior and is not proof of malware."
+  ]
+}
