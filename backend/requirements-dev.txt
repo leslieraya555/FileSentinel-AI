@@ -1,0 +1,7 @@
+# Development and verification dependencies for FileSentinel AI.
+# Author: Leslie Raya
+
+-r requirements.txt
+httpx>=0.28,<1.0
+pytest>=8.0,<10.0
+ruff>=0.9,<1.0

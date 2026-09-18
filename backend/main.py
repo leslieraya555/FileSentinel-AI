@@ -1,89 +1,95 @@
-from pathlib import Path
+"""FastAPI service for telemetry, statistics, and security assessments.
 
-import pandas as pd
-from fastapi import FastAPI
+Author: Leslie Raya
+GitHub: https://github.com/leslieraya555
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from ml_detector import get_ml_prediction
-from rule_detector import detect_suspicious_activity
+from backend.config import EVENTS_FILE, MAX_API_EVENTS, MODEL_FILE, allowed_origins
+from backend.database import ensure_event_store, load_events, serialize_events, summarize_events
+from backend.ml_detector import get_ml_prediction
+from backend.rule_detector import detect_suspicious_activity
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-EVENTS_FILE = BASE_DIR / "data" / "events.csv"
 
-app = FastAPI(title="FileSentinel AI API")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Prepare persistent resources before accepting requests."""
+    ensure_event_store()
+    yield
+
+
+app = FastAPI(
+    title="FileSentinel AI API",
+    version="2.0.0",
+    description="Explainable file-system monitoring with rules and anomaly detection.",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
 
 @app.get("/")
-def home():
-    return {"message": "FileSentinel AI backend is running"}
+def home() -> dict[str, str]:
+    """Return API identity and interactive documentation location."""
+    return {"service": "FileSentinel AI", "version": "2.0.0", "docs": "/docs"}
 
 
 @app.get("/health")
-def health():
-    return {"status": "healthy"}
+def health() -> dict[str, object]:
+    """Report operational dependencies used by external health checks."""
+    return {
+        "status": "healthy",
+        "event_store_ready": EVENTS_FILE.exists(),
+        "model_ready": MODEL_FILE.exists(),
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
 
 
 @app.get("/events")
-def get_events():
-    if not EVENTS_FILE.exists():
-        return []
-
-    try:
-        df = pd.read_csv(EVENTS_FILE)
-    except (pd.errors.EmptyDataError, OSError):
-        return []
-
-    if df.empty:
-        return []
-
-    return df.tail(100).fillna("").to_dict(orient="records")
+def get_events(limit: int = Query(MAX_API_EVENTS, ge=1, le=1000)) -> list[dict[str, str]]:
+    """Return the newest validated telemetry records."""
+    return serialize_events(load_events(limit=limit))
 
 
 @app.get("/stats")
-def get_stats():
-    empty_stats = {
-        "total_events": 0,
-        "create_events": 0,
-        "modify_events": 0,
-        "delete_events": 0,
-        "rename_events": 0,
-        "access_events": 0,
-    }
-
-    if not EVENTS_FILE.exists():
-        return empty_stats
-
-    try:
-        df = pd.read_csv(EVENTS_FILE)
-    except (pd.errors.EmptyDataError, OSError):
-        return empty_stats
-
-    if df.empty or "event_type" not in df.columns:
-        return empty_stats
-
-    return {
-        "total_events": len(df),
-        "create_events": int((df["event_type"] == "CREATE").sum()),
-        "modify_events": int((df["event_type"] == "MODIFY").sum()),
-        "delete_events": int((df["event_type"] == "DELETE").sum()),
-        "rename_events": int(df["event_type"].isin(["RENAMED_FROM", "RENAMED_TO"]).sum()),
-        "access_events": int((df["event_type"] == "ACCESS").sum()),
-    }
-
-
-@app.get("/alerts/ml")
-def ml_alert():
-    return get_ml_prediction()
+def get_stats() -> dict[str, int]:
+    """Return aggregate event counts for the full stored dataset."""
+    return summarize_events(load_events())
 
 
 @app.get("/alerts/rules")
-def rule_alerts():
+def rule_alerts() -> list[dict[str, object]]:
+    """Return explainable alerts triggered by the latest activity window."""
     return detect_suspicious_activity()
+
+
+@app.get("/alerts/ml")
+def ml_alert() -> dict[str, object]:
+    """Return the anomaly detector's latest assessment and evidence."""
+    return get_ml_prediction()
+
+
+@app.get("/overview")
+def overview(limit: int = Query(MAX_API_EVENTS, ge=1, le=1000)) -> dict[str, object]:
+    """Return one consistent snapshot for efficient dashboard refreshes."""
+    events = load_events()
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "stats": summarize_events(events),
+        "events": serialize_events(events.tail(limit)),
+        "rule_alerts": detect_suspicious_activity(events),
+        "ml_alert": get_ml_prediction(events),
+    }

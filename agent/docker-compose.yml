@@ -1,20 +1,85 @@
-version: "3.9"
+# FileSentinel AI — local API and dashboard deployment.
+# Author: Leslie Raya
+#
+# Run from the main project directory:
+# docker compose up --build -d
+#
+# Dashboard: http://localhost:5173
+# API:       http://localhost:8000
+#
+# The Linux monitoring agent runs separately and must write
+# events to the same data directory used by the backend.
+
+name: filesentinel-ai
 
 services:
   backend:
-    image: python:3.11-slim
-    working_dir: /app/backend
-    volumes:
-      - .:/app
-    command: sh -c "pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+    # Build the API using the main project as the build context.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+    init: true
+    restart: unless-stopped
+
+    # Requires backend/config.py to read this environment variable.
+    environment:
+      FILESENTINEL_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+
+    # Make the API accessible only from this computer.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      # Keep event data on the host between container replacements.
+      # The backend user must have permission to access this folder.
+      - type: bind
+        source: ./data
+        target: /app/data
+        bind:
+          create_host_path: false
+
+      # Load model files without allowing the API to modify them.
+      - type: bind
+        source: ./ml
+        target: /app/ml
+        read_only: true
+        bind:
+          create_host_path: false
+
+    security_opt:
+      - no-new-privileges:true
+
+    # Limit the amount of disk space used by container logs.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
-    image: node:20
-    working_dir: /app/frontend
-    volumes:
-      - .:/app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    # Requires a frontend Dockerfile that serves HTTP on port 80.
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+
+    init: true
+    restart: unless-stopped
+
+    # Start the backend first. This does not check API readiness.
+    depends_on:
+      - backend
+
+    # Expose the dashboard locally on port 5173.
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:80"
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+      
