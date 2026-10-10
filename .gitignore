@@ -20,3 +20,4 @@ ml/model.pkl
 
 # Environment variables
 .env
+data/live-events.csv
