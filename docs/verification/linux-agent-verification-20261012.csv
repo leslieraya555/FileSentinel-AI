@@ -1,0 +1,7 @@
+timestamp,event_type,file_name,file_path
+2026-10-12T23:05:18Z,CREATE,fs-check-gmFCxF,watch_folder/fs-check-gmFCxF
+2026-10-12T23:05:18Z,MODIFY,fs-check-gmFCxF,watch_folder/fs-check-gmFCxF
+2026-10-12T23:05:19Z,RENAMED_FROM,fs-check-gmFCxF,watch_folder/fs-check-gmFCxF
+2026-10-12T23:05:19Z,RENAMED_TO,fs-check-gmFCxF.renamed,watch_folder/fs-check-gmFCxF.renamed
+2026-10-12T23:05:20Z,ACCESS,fs-check-gmFCxF.renamed,watch_folder/fs-check-gmFCxF.renamed
+2026-10-12T23:05:21Z,DELETE,fs-check-gmFCxF.renamed,watch_folder/fs-check-gmFCxF.renamed
