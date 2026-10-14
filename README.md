@@ -12,7 +12,29 @@ The project uses behavioral rules to detect bulk file operations and an Isolatio
 - Flags bursts of modifications, deletions, renames, and creations.
 - Provides machine-learning anomaly assessments.
 - Includes interactive API documentation and health checks.
-- Provides a synthetic event simulation script and automated tests.
+- Provides a synthetic event simulation script.
+- Includes automated backend tests and a GitHub Actions test workflow.
+
+## Contents
+
+- [Screenshots](#screenshots)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [How It Works](#how-it-works)
+- [Requirements](#requirements)
+- [Local Setup](#local-setup)
+- [Run the Linux Monitoring Agent](#run-the-linux-monitoring-agent)
+- [Configuration](#configuration)
+- [Choose an Event Log](#choose-an-event-log)
+- [Verified Multipass VM Setup](#verified-multipass-vm-setup)
+- [Automated Tests](#automated-tests)
+- [Frontend Production Build](#frontend-production-build)
+- [Verification Results](#verification-results)
+- [Model Training and Evaluation](#model-training-and-evaluation)
+- [API Endpoints](#api-endpoints)
+- [Troubleshooting](#troubleshooting)
+- [Limitations](#limitations)
+- [Author](#author)
 
 ## Screenshots
 
@@ -74,6 +96,7 @@ The dashboard read a saved verification CSV. This screenshot documents a complet
 | Machine learning | scikit-learn, Isolation Forest, joblib |
 | Frontend | React, JavaScript, Vite |
 | Testing | pytest |
+| Continuous integration | GitHub Actions |
 | Version control | Git, GitHub |
 
 ## Project Structure
@@ -87,6 +110,7 @@ The dashboard read a saved verification CSV. This screenshot documents a complet
 | `ml/` | Training code, model artifacts, and metadata |
 | `scripts/` | Simulation and utility scripts |
 | `Automated tests/` | Python test suite |
+| `.github/workflows/` | GitHub Actions workflow configuration |
 | `docs/images-filesentinel/` | Project screenshots |
 | `docs/verification/` | Saved verification evidence |
 | `README.md` | Main project documentation |
@@ -106,20 +130,27 @@ Behavioral rules and the machine-learning model assess activity separately. An M
 
 ## Requirements
 
-- Python 3 and pip
+- Python 3, pip, and virtual environment support
 - Node.js and npm
 - Git
 - Linux, GCC, and Make for the monitoring agent
+- Multipass if using the VM workflow described below
 
 The C monitoring agent requires Linux because it uses inotify.
 
-On macOS, run the agent inside a Linux virtual machine, such as a Multipass instance. The backend and frontend can run separately on the Mac.
+On macOS, run the agent inside a Linux virtual machine. The backend and frontend can run on the Mac or inside the VM.
 
-The commands below use a macOS or Linux shell.
+The commands below use a macOS or Linux shell. Unless a section says otherwise, run project commands from the main project directory.
 
-## Get Started
+## Local Setup
 
-Clone the repository:
+This setup runs the backend and frontend on the machine where the commands are entered.
+
+The backend uses port `8000`, and the frontend uses port `5173`.
+
+### 1. Open the Project
+
+For a new checkout:
 
 ```bash
 git clone https://github.com/leslieraya555/FileSentinel-AI.git
@@ -128,7 +159,7 @@ cd FileSentinel-AI
 
 If you already have the project, open its existing main directory instead.
 
-### 1. Set Up the Backend
+### 2. Install Backend Dependencies
 
 From the main project directory:
 
@@ -138,7 +169,7 @@ source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
 ```
 
-### 2. Start the Backend
+### 3. Start the Backend
 
 From the main project directory:
 
@@ -152,25 +183,25 @@ Open the interactive API documentation:
 
 [http://localhost:8000/docs](http://localhost:8000/docs)
 
-### 3. Start the Frontend
+### 4. Start the Frontend
 
 Open another terminal in the main project directory:
 
 ```bash
 cd frontend
 npm install
-npm run dev
+VITE_API_BASE_URL="http://localhost:8000" npm run dev -- --port 5173 --strictPort
 ```
 
 Leave this terminal running. This is the frontend terminal.
 
-Open the URL printed by Vite, normally:
+Open the dashboard:
 
 [http://localhost:5173](http://localhost:5173)
 
-If you use a different backend address or port, ensure that the frontend's API configuration points to that backend.
+These URLs work while the corresponding local services are running.
 
-### 4. Generate Simulated Events
+### 5. Generate Simulated Events
 
 Open a third terminal in the main project directory:
 
@@ -183,6 +214,8 @@ The simulation appends synthetic records to `data/events.csv`. It includes norma
 The script generates event records; it does not perform the described file operations on real files.
 
 Refresh the dashboard to inspect event counts and alerts. Repeated runs add more records.
+
+The backend must be reading `data/events.csv` to display these simulated records. If it is reading a saved verification log, restart it with the standard backend command first.
 
 ## Run the Linux Monitoring Agent
 
@@ -202,7 +235,28 @@ See the [agent README](agent/README.md) for detailed setup, file-operation tests
 
 The backend must read the event CSV produced by the agent to display those events.
 
+## Configuration
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `FILESENTINEL_EVENTS_FILE` | Backend | Selects the event CSV to read |
+| `FILESENTINEL_ALLOWED_ORIGINS` | Backend | Sets a comma-separated list of allowed frontend origins |
+| `VITE_API_BASE_URL` | Frontend | Sets the backend API base URL |
+
+An origin includes the protocol, hostname or IP address, and port.
+
+For example:
+
+```text
+http://localhost:5173
+http://192.168.252.2:5173
+```
+
+Set these variables before starting the corresponding service. Restart the service after changing its configuration.
+
 ## Choose an Event Log
+
+Run one backend instance per port. Stop the existing backend with **Control + C** before starting it with another event file.
 
 ### Default Event Log
 
@@ -214,12 +268,11 @@ The standard backend command uses `data/events.csv`:
 
 ### Saved Linux Verification Log
 
-To display the archived Linux verification records, stop the backend with **Control + C** in its terminal.
-
-Then run this command from the main project directory:
+To display the archived Linux verification records, run this command from the main project directory:
 
 ```bash
-FILESENTINEL_EVENTS_FILE="$PWD/docs/verification/linux-agent-verification-20261012.csv" .venv/bin/python -m uvicorn backend.main:app --reload --port 8000
+FILESENTINEL_EVENTS_FILE="$PWD/docs/verification/linux-agent-verification-20261012.csv" \
+.venv/bin/python -m uvicorn backend.main:app --reload --port 8000
 ```
 
 Refresh the dashboard to inspect the saved records.
@@ -228,10 +281,11 @@ Refresh the dashboard to inspect the saved records.
 
 If the agent runs inside a Linux VM and the backend runs on the Mac, transfer the event CSV into the Mac project.
 
-For example, after copying it to `data/live-events.csv`, stop the existing backend and run:
+For example, after copying it to `data/live-events.csv`, run:
 
 ```bash
-FILESENTINEL_EVENTS_FILE="$PWD/data/live-events.csv" .venv/bin/python -m uvicorn backend.main:app --reload --port 8000
+FILESENTINEL_EVENTS_FILE="$PWD/data/live-events.csv" \
+.venv/bin/python -m uvicorn backend.main:app --reload --port 8000
 ```
 
 Refresh the dashboard to display the copied records.
@@ -239,6 +293,87 @@ Refresh the dashboard to display the copied records.
 A manually copied CSV is a snapshot. New events captured in the VM require another transfer before they appear on the Mac dashboard.
 
 To return to `data/events.csv`, stop the backend and restart it with the standard backend command.
+
+## Verified Multipass VM Setup
+
+This setup runs the backend and frontend inside a Linux VM while the browser runs on the Mac.
+
+The verified setup uses:
+
+- Multipass VM: `memorymedic`
+- Project directory inside the VM: `~/filesentinel-verification-20261012`
+- Backend port: `8001`
+- Frontend port: `5173`
+
+These commands assume the VM already exists and the project dependencies are installed inside it.
+
+For another installation, adjust the VM name and project directory. Complete the backend dependency installation and frontend `npm install` inside the VM checkout before starting these services.
+
+### 1. Start the VM and Check Its Address
+
+Run these commands in a Mac terminal:
+
+```bash
+multipass start memorymedic
+multipass info memorymedic
+```
+
+Note the VM's IPv4 address.
+
+The startup commands below select the first address returned by `hostname -I` inside the VM.
+
+### 2. Start the Backend
+
+Run this command in a Mac terminal:
+
+```bash
+multipass exec memorymedic -- bash -lc '
+cd "$HOME/filesentinel-verification-20261012" &&
+fs_vm_ip=$(hostname -I) &&
+fs_vm_ip=${fs_vm_ip%% *} &&
+FILESENTINEL_ALLOWED_ORIGINS="http://$fs_vm_ip:5173,http://localhost:5173,http://127.0.0.1:5173" \
+FILESENTINEL_EVENTS_FILE="$PWD/docs/verification/linux-agent-verification-20261012.csv" \
+.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
+'
+```
+
+Leave this terminal running.
+
+The allowed origins include the dashboard's VM address so the browser can request backend data.
+
+This command displays the saved Linux verification CSV. To display ongoing agent activity, point `FILESENTINEL_EVENTS_FILE` to the CSV being updated by the agent.
+
+### 3. Start the Frontend
+
+Open another Mac terminal and run:
+
+```bash
+multipass exec memorymedic -- bash -lc '
+cd "$HOME/filesentinel-verification-20261012/frontend" &&
+fs_vm_ip=$(hostname -I) &&
+fs_vm_ip=${fs_vm_ip%% *} &&
+VITE_API_BASE_URL="http://$fs_vm_ip:8001" \
+npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+'
+```
+
+Leave this terminal running.
+
+`VITE_API_BASE_URL` points the dashboard to the backend inside the VM.
+
+### 4. Open the Application
+
+The verified VM used `192.168.252.2`. Replace this address with the current IPv4 address reported by `multipass info`.
+
+| Page | Example address |
+| --- | --- |
+| Dashboard | http://192.168.252.2:5173/ |
+| API documentation | http://192.168.252.2:8001/docs |
+| Health check | http://192.168.252.2:8001/health |
+
+When browsing from the Mac, use the VM's address. `localhost` refers to the Mac itself.
+
+If a service is already running, stop it in its existing terminal with **Control + C** before starting a replacement on the same port.
 
 ## Automated Tests
 
@@ -258,11 +393,30 @@ Then run the test command again.
 
 The recorded local test run on October 1, 2026 completed with **12 passed and 2 dependency deprecation warnings**.
 
+A successful GitHub Actions run was observed on October 13, 2026 for commit `57ba7e3`.
+
+[View GitHub Actions](https://github.com/leslieraya555/FileSentinel-AI/actions)
+
+## Frontend Production Build
+
+From the main project directory:
+
+```bash
+cd frontend
+npm run build
+```
+
+The build generates production assets in `frontend/dist/`.
+
+The recorded build on October 13, 2026 completed successfully. This verifies that the frontend compiled for production.
+
 ## Verification Results
 
 | Check | Observed result |
 | --- | --- |
-| Automated tests | 12 passed in the recorded local run |
+| Local automated tests | 12 passed in the recorded local run |
+| GitHub Actions | Successful workflow run observed for commit `57ba7e3` on October 13, 2026 |
+| Frontend production build | `npm run build` completed successfully on October 13, 2026 |
 | Synthetic event simulation | Events appeared on the dashboard |
 | Behavioral detection rules | Simulation produced four rule alerts |
 | Linux agent compilation | Compiled successfully in a Linux VM |
@@ -271,14 +425,16 @@ The recorded local test run on October 1, 2026 completed with **12 passed and 2 
 | Backend and dashboard integration | Displayed six saved Linux verification records with API HEALTHY status |
 | Verification-log rule assessment | Zero rule alerts |
 | Verification-log ML assessment | Anomaly assessment displayed with a score of 73/100 |
+| Saved model evaluation | Synthetic validation metrics were reviewed |
+| README screenshots | All four embedded images were confirmed to display on GitHub |
 
-These results describe local verification using the tested activity and saved event data. They do not establish real-world detection accuracy.
+These results describe the recorded local verification and observed CI run. They do not establish real-world detection accuracy.
 
-GitHub Actions results must be checked separately.
+Check GitHub Actions for the status of newer commits.
 
-[View GitHub Actions](https://github.com/leslieraya555/FileSentinel-AI/actions)
+## Model Training and Evaluation
 
-## Model Training
+### Train the Model
 
 From the main project directory:
 
@@ -296,15 +452,72 @@ The training script:
 
 Running training overwrites these artifacts. Restart the backend after replacing its model.
 
-Synthetic validation metrics do not establish real-world detection accuracy. Model behavior requires further evaluation with representative file-system activity.
+### Inspect the Saved Metadata
+
+From the main project directory:
+
+```bash
+.venv/bin/python -m json.tool ml/model_metadata.json
+```
+
+[View the saved model metadata](ml/model_metadata.json)
+
+### Recorded Synthetic Validation Results
+
+The metadata reviewed on October 13, 2026 records a training run from October 12, 2026.
+
+| Setting | Recorded value |
+| --- | --- |
+| Algorithm | Isolation Forest |
+| Random seed | 42 |
+| Training rows | 1,500 |
+| Validation rows | 600 |
+
+The recorded input features are:
+
+- `modify_count`
+- `delete_count`
+- `rename_count`
+- `create_count`
+- `access_count`
+- `events_per_second`
+
+| Metric | Recorded result |
+| --- | ---: |
+| Precision | 97.72% |
+| Recall | 100% |
+| F1 score | 98.85% |
+| False-positive rate | 2.33% |
+
+These results apply to the synthetic validation data used in that run.
+
+They do not establish real-world detection accuracy. Model behavior requires further evaluation with representative file-system activity.
+
+The dashboard's displayed anomaly score is separate from these evaluation metrics.
+
+## API Endpoints
+
+Open `/docs` on the running backend for interactive documentation and request parameters.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/` | Backend home endpoint |
+| GET | `/health` | Backend health status |
+| GET | `/events` | Event records |
+| GET | `/stats` | Activity statistics |
+| GET | `/alerts/rules` | Behavioral rule alerts |
+| GET | `/alerts/ml` | Machine-learning assessment |
+| GET | `/overview` | Combined dashboard data |
 
 ## Troubleshooting
 
-### Port 8000 Is Already in Use
+### A Port Is Already in Use
 
-An existing process may already be running the backend.
+An existing process may already be running the service.
 
-Stop the existing backend in its terminal with **Control + C** before starting another instance on the same port.
+Stop that service in its existing terminal with **Control + C** before starting another instance on the same port.
+
+The local setup uses backend port `8000`. The verified VM setup uses backend port `8001`. Both frontend examples use port `5173`.
 
 ### Dashboard Cannot Connect to the API
 
@@ -315,15 +528,29 @@ Confirm that:
 - The API documentation page opens in the browser.
 - Browser and backend logs do not show connection errors.
 
-When accessing a service inside a Linux VM, use the VM's reachable IP address. `localhost` refers to the machine running the browser.
+For the local setup, the frontend API address is:
+
+```text
+http://localhost:8000
+```
+
+For the verified VM setup, the frontend API address was:
+
+```text
+http://192.168.252.2:8001
+```
+
+Use the VM's current IP address when accessing its services from the Mac.
+
+Set `VITE_API_BASE_URL` before starting the frontend. Restart the frontend after changing this value.
 
 ### Browser Reports a CORS Error
 
 The backend's allowed origins must include the exact frontend origin, including its protocol, hostname or IP address, and port.
 
-The backend supports the `FILESENTINEL_ALLOWED_ORIGINS` environment variable for configuring a comma-separated list of allowed origins.
+Use `FILESENTINEL_ALLOWED_ORIGINS` to configure a comma-separated list of allowed origins.
 
-When accessing the dashboard through a VM IP address, include that dashboard origin in the list and restart the backend.
+When accessing the dashboard through a VM IP address, include that dashboard origin and restart the backend.
 
 ### Expected Events Do Not Appear
 
@@ -334,6 +561,8 @@ Confirm that:
 - The event was recorded in the CSV.
 - The backend is reading the intended CSV.
 - A new transfer was completed if using the VM snapshot workflow.
+
+A backend reading the archived verification CSV continues to display that saved data.
 
 Refresh the dashboard after checking the event data.
 
