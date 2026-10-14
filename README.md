@@ -16,6 +16,11 @@ The project uses behavioral rules to detect bulk file operations and an Isolatio
 
 ## Screenshots
 
+### Linux verification dashboard
+
+![Linux agent verification dashboard](docs/images-filesentinel/dashboard/filesentinel-linux-verification-dashboard.png)
+
+
 ### Dashboard
 
 Displays file activity, anomaly assessments, and rule alerts.
